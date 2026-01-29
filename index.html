@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>English Words Trainer</title>
+  <style>
+    :root{--bg:#0b0d12;--card:#121625;--muted:#9aa4b2;--text:#e6eaf2;--accent:#5dd6c6;--bad:#ff6b6b;--good:#35d07f}
+    *{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--text)}
+    .wrap{max-width:980px;margin:0 auto;padding:16px}
+    h1{font-size:18px;margin:8px 0 12px}
+    .row{display:flex;gap:10px;flex-wrap:wrap}
+    .card{background:var(--card);border:1px solid #1f2742;border-radius:16px;padding:14px}
+    .grow{flex:1}
+    label{font-size:12px;color:var(--muted)}
+    select,input,button{
+      width:100%; padding:10px 12px; border-radius:12px; border:1px solid #273055;
+      background:#0f1322; color:var(--text); outline:none;
+    }
+    button{cursor:pointer;font-weight:700}
+    button.primary{background:linear-gradient(135deg,#2ee6c2,#4ea1ff);border:none;color:#061018}
+    button.ghost{background:transparent}
+    .pill{display:inline-flex;gap:8px;align-items:center;padding:6px 10px;border-radius:999px;border:1px solid #273055;color:var(--muted);font-size:12px}
+    .big{font-size:28px;font-weight:900;margin:10px 0 4px}
+    .sub{color:var(--muted);font-size:14px;margin:0}
+    .hr{height:1px;background:#1f2742;margin:12px 0}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    @media (max-width:720px){.grid2{grid-template-columns:1fr}}
+    .ans{padding:10px 12px;border-radius:12px;border:1px dashed #2c3763;background:#0b1020}
+    .hint{font-size:12px;color:var(--muted);margin-top:6px}
+    .opts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .kbd{font-family:ui-monospace,Consolas,monospace;border:1px solid #273055;border-bottom-width:2px;padding:1px 6px;border-radius:8px;color:var(--muted)}
+    table{width:100%;border-collapse:collapse}
+    td,th{border-bottom:1px solid #1f2742;padding:8px 6px;text-align:left;font-size:14px}
+    th{color:var(--muted);font-weight:700}
+    .mono{font-family:ui-monospace,Consolas,monospace}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Тренажёр слов (перевод + произношение + аудио)</h1>
+
+    <div class="row">
+      <div class="card grow">
+        <div class="grid2">
+          <div>
+            <label>Режим (4 части)</label>
+            <select id="mode">
+              <option value="list">1) Список</option>
+              <option value="cards">2) Карточки</option>
+              <option value="mcq">3) Тест (выбор)</option>
+              <option value="dict">4) Произношение (аудио → введи слово)</option>
+            </select>
+          </div>
+          <div>
+            <label>Направление</label>
+            <select id="dir">
+              <option value="en-ru">English → Русский</option>
+              <option value="ru-en">Русский → English</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="hr"></div>
+        <div class="row">
+          <div class="pill">✅ <span id="ok">0</span></div>
+          <div class="pill">❌ <span id="bad">0</span></div>
+          <div class="pill">🔥 серия: <span id="streak">0</span></div>
+          <div class="pill">📦 слов: <span id="count">0</span></div>
+        </div>
+
+        <div class="hr"></div>
+
+        <div id="screen"></div>
+      </div>
+    </div>
+
+    <p class="hint">
+      Аудио берётся с Wiktionary/Commons: если для слова нет записи, будет показано сообщение.
+      Для опечаток используется корректная форма (см. заметки).
+    </p>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

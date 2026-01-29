@@ -14,7 +14,7 @@
   { "display":"trigger", "lookup":"trigger", "ru":"триггер / запуск (сигнал)", "pron":"трИггэр" },
   { "display":"receive", "lookup":"receive", "ru":"получать / принимать", "pron":"рисИв" },
   { "display":"led", "lookup":"LED", "ru":"светодиод (LED)", "pron":"эл-и-дИ" },
-  { "display":"trying", "lookup":"trying", "ru":"пытающийся / попытка (в контексте: trying = пытается)", "pron":"трАйинг" },
+  { "display":"trying", "lookup":"trying", "ru":"пытается / попытка (trying)", "pron":"трАйинг" },
   { "display":"view", "lookup":"view", "ru":"вид / просмотр", "pron":"вью" },
   { "display":"varies", "lookup":"varies", "ru":"варьируется / меняется", "pron":"вЭриз" },
 
@@ -25,5 +25,5 @@
 
   { "display":"repits", "lookup":"repeats", "ru":"повторяет / повторы", "pron":"рипИтс", "note":"В списке опечатка: repeats" },
   { "display":"secure", "lookup":"secure", "ru":"защищённый / обеспечить безопасность", "pron":"сикьЮр" },
-  { "display":"acquire", "lookup":"acquire", "ru":"приобретать / получать / захватывать (данные)", "pron":"эквАйр" }
+  { "display":"acquire", "lookup":"acquire", "ru":"получать / захватывать (данные)", "pron":"эквАйр" }
 ]

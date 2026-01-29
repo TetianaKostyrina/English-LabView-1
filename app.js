@@ -1,466 +1,86 @@
-const $ = (id) => document.getElementById(id);
-
-let WORDS = [];
-let state = {
-  mode: "list",
-  dir: "en-ru",
-  i: 0,
-  ok: 0,
-  bad: 0,
-  streak: 0,
-  showAnswer: false,
-  audioCache: new Map(), // lookup -> url|null
-};
-
-function norm(s) {
-  return (s ?? "")
-    .toString()
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
-}
-
-function shuffle(a) {
-  const b = a.slice();
-  for (let i = b.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [b[i], b[j]] = [b[j], b[i]];
-  }
-  return b;
-}
-
-function current() {
-  return WORDS[state.i % WORDS.length];
-}
-
-function setStats() {
-  $("ok").textContent = state.ok;
-  $("bad").textContent = state.bad;
-  $("streak").textContent = state.streak;
-  $("count").textContent = WORDS.length;
-}
-
-/**
- * ВАЖНОЕ ИЗМЕНЕНИЕ:
- * - EN->RU: показываем произношение в подписи (как раньше)
- * - RU->EN: НЕ показываем произношение в подписи, чтобы не было подсказки
- */
-function promptText(w) {
-  if (state.dir === "en-ru") {
-    return {
-      prompt: w.display,
-      sub: `произношение: ${w.pron}${w.note ? " • " + w.note : ""}`,
-    };
-  } else {
-    return {
-      prompt: w.ru,
-      sub: w.note ? `Примечание: ${w.note}` : "",
-    };
-  }
-}
-
-function answerText(w) {
-  if (state.dir === "en-ru") {
-    return `Русский: ${w.ru}\nПроизношение (кириллица): ${w.pron}`;
-  } else {
-    return `English: ${w.display}\nПроизношение (кириллица): ${w.pron}`;
-  }
-}
-
-function mark(correct) {
-  if (correct) {
-    state.ok += 1;
-    state.streak += 1;
-  } else {
-    state.bad += 1;
-    state.streak = 0;
-  }
-  setStats();
-}
-
-function next() {
-  state.showAnswer = false;
-  state.i = (state.i + 1) % WORDS.length;
-  render();
-}
-
-async function loadWords() {
-  const rsp = await fetch("words.json", { cache: "no-store" });
-  WORDS = await rsp.json();
-  if (!Array.isArray(WORDS) || WORDS.length === 0) throw new Error("words.json пустой или неверный");
-  state.i = 0;
-  setStats();
-  render();
-}
-
-function render() {
-  $("mode").value = state.mode;
-  $("dir").value = state.dir;
-
-  const screen = $("screen");
-  screen.innerHTML = "";
-
-  if (state.mode === "list") renderList(screen);
-  if (state.mode === "cards") renderCards(screen);
-  if (state.mode === "mcq") renderMCQ(screen);
-  if (state.mode === "dict") renderDictation(screen);
-
-  bindHotkeys();
-}
-
-function renderList(root) {
-  const box = document.createElement("div");
-  box.className = "card";
-  box.style.padding = "0";
-  box.innerHTML = `
-    <div style="padding:14px">
-      <label>Поиск</label>
-      <input id="q" placeholder="например: sensor / датчик" />
-      <div class="hint">В списке можно нажимать 🔊 для аудио.</div>
-    </div>
-    <div class="hr"></div>
-    <div style="padding:0 14px 14px 14px; overflow:auto">
-      <table>
-        <thead>
-          <tr>
-            <th>English</th><th>Русский</th><th>Произн.</th><th>Аудио</th>
-          </tr>
-        </thead>
-        <tbody id="tbody"></tbody>
-      </table>
-    </div>
-  `;
-  root.appendChild(box);
-
-  const tbody = box.querySelector("#tbody");
-
-  function draw(filter = "") {
-    tbody.innerHTML = "";
-    const f = norm(filter);
-    for (const w of WORDS) {
-      const hit =
-        !f ||
-        norm(w.display).includes(f) ||
-        norm(w.lookup).includes(f) ||
-        norm(w.ru).includes(f);
-      if (!hit) continue;
-
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td class="mono">${escapeHtml(w.display)}</td>
-        <td>${escapeHtml(w.ru)}</td>
-        <td>${escapeHtml(w.pron || "")}</td>
-        <td><button class="ghost" data-audio="${escapeHtml(w.lookup)}">🔊</button></td>
-      `;
-      tbody.appendChild(tr);
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>English Words Trainer</title>
+  <style>
+    :root{--bg:#0b0d12;--card:#121625;--muted:#9aa4b2;--text:#e6eaf2;--accent:#5dd6c6;--bad:#ff6b6b;--good:#35d07f}
+    *{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--text)}
+    .wrap{max-width:980px;margin:0 auto;padding:16px}
+    h1{font-size:18px;margin:8px 0 12px}
+    .row{display:flex;gap:10px;flex-wrap:wrap}
+    .card{background:var(--card);border:1px solid #1f2742;border-radius:16px;padding:14px}
+    .grow{flex:1}
+    label{font-size:12px;color:var(--muted)}
+    select,input,button{
+      width:100%; padding:10px 12px; border-radius:12px; border:1px solid #273055;
+      background:#0f1322; color:var(--text); outline:none;
     }
-
-    tbody.querySelectorAll("button[data-audio]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const lk = btn.getAttribute("data-audio");
-        await playAudio(lk, btn);
-      });
-    });
-  }
-
-  const q = box.querySelector("#q");
-  q.addEventListener("input", () => draw(q.value));
-  draw("");
-}
-
-function renderCards(root) {
-  const w = current();
-  const { prompt, sub } = promptText(w);
-
-  const wrap = document.createElement("div");
-  wrap.innerHTML = `
-    <div class="big">${escapeHtml(prompt)}</div>
-    <p class="sub">${escapeHtml(sub)}</p>
-
-    <div class="hr"></div>
+    button{cursor:pointer;font-weight:700}
+    button.primary{background:linear-gradient(135deg,#2ee6c2,#4ea1ff);border:none;color:#061018}
+    button.ghost{background:transparent}
+    .pill{display:inline-flex;gap:8px;align-items:center;padding:6px 10px;border-radius:999px;border:1px solid #273055;color:var(--muted);font-size:12px}
+    .big{font-size:28px;font-weight:900;margin:10px 0 4px}
+    .sub{color:var(--muted);font-size:14px;margin:0}
+    .hr{height:1px;background:#1f2742;margin:12px 0}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    @media (max-width:720px){.grid2{grid-template-columns:1fr}}
+    .ans{padding:10px 12px;border-radius:12px;border:1px dashed #2c3763;background:#0b1020}
+    .hint{font-size:12px;color:var(--muted);margin-top:6px}
+    .opts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .kbd{font-family:ui-monospace,Consolas,monospace;border:1px solid #273055;border-bottom-width:2px;padding:1px 6px;border-radius:8px;color:var(--muted)}
+    table{width:100%;border-collapse:collapse}
+    td,th{border-bottom:1px solid #1f2742;padding:8px 6px;text-align:left;font-size:14px}
+    th{color:var(--muted);font-weight:700}
+    .mono{font-family:ui-monospace,Consolas,monospace}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Тренажёр слов (перевод + произношение + аудио)</h1>
 
     <div class="row">
-      <button class="primary" id="flip">Показать ответ (<span class="kbd">Space</span>)</button>
-      <button class="ghost" id="audio">🔊 Аудио</button>
-      <button class="ghost" id="n">Следующее (<span class="kbd">N</span>)</button>
+      <div class="card grow">
+        <div class="grid2">
+          <div>
+            <label>Режим (4 части)</label>
+            <select id="mode">
+              <option value="list">1) Список</option>
+              <option value="cards">2) Карточки</option>
+              <option value="mcq">3) Тест (выбор)</option>
+              <option value="dict">4) Произношение (аудио → введи слово)</option>
+            </select>
+          </div>
+          <div>
+            <label>Направление</label>
+            <select id="dir">
+              <option value="en-ru">English → Русский</option>
+              <option value="ru-en">Русский → English</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="hr"></div>
+        <div class="row">
+          <div class="pill">✅ <span id="ok">0</span></div>
+          <div class="pill">❌ <span id="bad">0</span></div>
+          <div class="pill">🔥 серия: <span id="streak">0</span></div>
+          <div class="pill">📦 слов: <span id="count">0</span></div>
+        </div>
+
+        <div class="hr"></div>
+
+        <div id="screen"></div>
+      </div>
     </div>
 
-    <div class="hr"></div>
+    <p class="hint">
+      🔊 Аудио берётся с Wiktionary/Commons (если для слова есть запись). Кнопка 🔀 перемешивает порядок слов.
+    </p>
+  </div>
 
-    <div id="ans" class="ans" style="display:${state.showAnswer ? "block" : "none"}; white-space:pre-line"></div>
-
-    <div class="hr"></div>
-
-    <div class="row">
-      <button class="good" id="okBtn">Знаю</button>
-      <button class="bad" id="badBtn">Не знаю</button>
-    </div>
-  `;
-  root.appendChild(wrap);
-
-  const ans = wrap.querySelector("#ans");
-  ans.textContent = answerText(w);
-
-  wrap.querySelector("#flip").onclick = () => {
-    state.showAnswer = !state.showAnswer;
-    render();
-  };
-  wrap.querySelector("#n").onclick = () => next();
-  wrap.querySelector("#audio").onclick = async () => playAudio(w.lookup, wrap.querySelector("#audio"));
-
-  wrap.querySelector("#okBtn").onclick = () => {
-    mark(true);
-    next();
-  };
-  wrap.querySelector("#badBtn").onclick = () => {
-    mark(false);
-    next();
-  };
-}
-
-function renderMCQ(root) {
-  const w = current();
-  const { prompt, sub } = promptText(w);
-
-  const choices = buildChoices(w, 4);
-
-  const wrap = document.createElement("div");
-  wrap.innerHTML = `
-    <div class="big">${escapeHtml(prompt)}</div>
-    <p class="sub">${escapeHtml(sub)}</p>
-
-    <div class="hr"></div>
-
-    <div class="row">
-      <button class="ghost" id="audio">🔊 Аудио</button>
-      <button class="ghost" id="n">Пропустить (<span class="kbd">N</span>)</button>
-    </div>
-
-    <div class="hr"></div>
-
-    <div class="opts" id="opts"></div>
-
-    <div class="hr"></div>
-    <div id="ans" class="ans" style="display:none; white-space:pre-line"></div>
-  `;
-  root.appendChild(wrap);
-
-  const opts = wrap.querySelector("#opts");
-  const ans = wrap.querySelector("#ans");
-  const correctVal = state.dir === "en-ru" ? w.ru : w.display;
-
-  for (const c of choices) {
-    const btn = document.createElement("button");
-    btn.className = "ghost";
-    btn.textContent = c;
-    btn.onclick = () => {
-      const ok = norm(c) === norm(correctVal);
-      mark(ok);
-      ans.style.display = "block";
-      ans.textContent = answerText(w);
-      setTimeout(() => next(), 600);
-    };
-    opts.appendChild(btn);
-  }
-
-  wrap.querySelector("#n").onclick = () => next();
-  wrap.querySelector("#audio").onclick = async () => playAudio(w.lookup, wrap.querySelector("#audio"));
-}
-
-function renderDictation(root) {
-  const w = current();
-
-  const wrap = document.createElement("div");
-  wrap.innerHTML = `
-    <div class="big">🔊 Слушай и введи слово</div>
-    <p class="sub">Подсказка (рус.): ${escapeHtml(w.ru)} • (Space — повторить аудио)</p>
-
-    <div class="hr"></div>
-
-    <div class="row">
-      <button class="primary" id="play">▶️ Проиграть аудио</button>
-      <button class="ghost" id="show">Показать ответ</button>
-      <button class="ghost" id="n">Следующее (<span class="kbd">N</span>)</button>
-    </div>
-
-    <div class="hr"></div>
-
-    <label>Ваш ответ (English)</label>
-    <input id="inp" placeholder="введите услышанное слово и Enter" />
-    <div class="hint">Принимаются также ваши 3 опечатки (meusures/continuosly/repits), если они есть в списке.</div>
-
-    <div class="hr"></div>
-    <div id="ans" class="ans" style="display:none; white-space:pre-line"></div>
-  `;
-  root.appendChild(wrap);
-
-  const inp = wrap.querySelector("#inp");
-  const ans = wrap.querySelector("#ans");
-
-  const accepted = new Set([norm(w.display), norm(w.lookup)]);
-  if (w.display) accepted.add(norm(w.display)); // на всякий случай
-  // если display отличается от lookup (как при опечатке), разрешим ввод display тоже
-  if (norm(w.display) !== norm(w.lookup)) accepted.add(norm(w.display));
-
-  function check() {
-    const v = norm(inp.value);
-    const ok = accepted.has(v);
-    mark(ok);
-    ans.style.display = "block";
-    ans.textContent =
-      `Правильный ответ: ${w.display} (lookup: ${w.lookup})\n` + answerText(w);
-    setTimeout(() => next(), 800);
-  }
-
-  inp.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") check();
-  });
-
-  wrap.querySelector("#play").onclick = async () => playAudio(w.lookup, wrap.querySelector("#play"));
-  wrap.querySelector("#show").onclick = () => {
-    ans.style.display = "block";
-    ans.textContent = answerText(w);
-  };
-  wrap.querySelector("#n").onclick = () => next();
-}
-
-function buildChoices(w, n = 4) {
-  const pool = WORDS.filter((x) => x !== w);
-  const pick = shuffle(pool).slice(0, n - 1);
-  const correct = state.dir === "en-ru" ? w.ru : w.display;
-  const arr = [...pick.map((x) => (state.dir === "en-ru" ? x.ru : x.display)), correct];
-  return shuffle(arr);
-}
-
-async function getAudioUrl(lookup) {
-  const key = norm(lookup);
-  if (state.audioCache.has(key)) return state.audioCache.get(key);
-
-  const mediaUrl = `https://en.wiktionary.org/api/rest_v1/page/media-list/${encodeURIComponent(lookup)}`;
-  let data;
-  try {
-    const rsp = await fetch(mediaUrl, { cache: "no-store" });
-    if (!rsp.ok) throw new Error(`media-list HTTP ${rsp.status}`);
-    data = await rsp.json();
-  } catch {
-    state.audioCache.set(key, null);
-    return null;
-  }
-
-  const items = Array.isArray(data?.items) ? data.items : [];
-  const prefer = ["en-us", "en-uk", "en-ca", "eng"];
-  let fileTitle = null;
-
-  for (const tag of prefer) {
-    const found = items.find((it) => {
-      const t = (it?.title || "").toLowerCase();
-      const looksAudio = t.includes(".ogg") || t.includes(".oga") || t.includes(".wav") || t.includes(".mp3");
-      return looksAudio && t.includes(tag);
-    });
-    if (found?.title) {
-      fileTitle = found.title;
-      break;
-    }
-  }
-
-  if (!fileTitle) {
-    const found = items.find((it) => {
-      const t = (it?.title || "").toLowerCase();
-      return t.includes(".ogg") || t.includes(".oga") || t.includes(".wav") || t.includes(".mp3");
-    });
-    if (found?.title) fileTitle = found.title;
-  }
-
-  if (!fileTitle) {
-    state.audioCache.set(key, null);
-    return null;
-  }
-
-  if (!fileTitle.toLowerCase().startsWith("file:")) fileTitle = "File:" + fileTitle;
-
-  const commons = `https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&prop=imageinfo&iiprop=url&titles=${encodeURIComponent(fileTitle)}`;
-
-  try {
-    const rsp = await fetch(commons, { cache: "no-store" });
-    if (!rsp.ok) throw new Error(`commons HTTP ${rsp.status}`);
-    const j = await rsp.json();
-    const pages = j?.query?.pages || {};
-    const page = Object.values(pages)[0];
-    const url = page?.imageinfo?.[0]?.url || null;
-    state.audioCache.set(key, url);
-    return url;
-  } catch {
-    state.audioCache.set(key, null);
-    return null;
-  }
-}
-
-async function playAudio(lookup, btn) {
-  const old = btn?.textContent;
-  if (btn) {
-    btn.textContent = "⏳";
-    btn.disabled = true;
-  }
-
-  const url = await getAudioUrl(lookup);
-
-  if (btn) {
-    btn.textContent = old;
-    btn.disabled = false;
-  }
-
-  if (!url) {
-    alert(`Аудио не найдено для: ${lookup}\nЕсли слово написано с ошибкой — проверьте "lookup" в words.json.`);
-    return;
-  }
-
-  try {
-    const a = new Audio(url);
-    a.play();
-  } catch {
-    window.open(url, "_blank");
-  }
-}
-
-function bindHotkeys() {
-  document.onkeydown = async (e) => {
-    if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
-
-    if (e.key === "n" || e.key === "N") next();
-
-    if (e.code === "Space") {
-      e.preventDefault();
-      const w = current();
-      if (state.mode === "cards") {
-        state.showAnswer = !state.showAnswer;
-        render();
-      } else if (state.mode === "dict" || state.mode === "mcq") {
-        await playAudio(w.lookup, null);
-      }
-    }
-  };
-}
-
-function escapeHtml(s) {
-  return (s ?? "")
-    .toString()
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-$("mode").addEventListener("change", (e) => {
-  state.mode = e.target.value;
-  render();
-});
-
-$("dir").addEventListener("change", (e) => {
-  state.dir = e.target.value;
-  render();
-});
-
-loadWords().catch((err) => {
-  $("screen").innerHTML = `<div class="ans">Ошибка загрузки: ${escapeHtml(err.message)}</div>`;
-});
+  <!-- v=3 чтобы обходить кэш -->
+  <script src="app.js?v=3"></script>
+</body>
+</html>

@@ -9,7 +9,7 @@ let state = {
   bad: 0,
   streak: 0,
   showAnswer: false,
-  audioCache: new Map(), // lookup -> url
+  audioCache: new Map(), // lookup -> url|null
 };
 
 function norm(s) {
@@ -40,20 +40,22 @@ function setStats() {
   $("count").textContent = WORDS.length;
 }
 
-async function loadWords() {
-  const rsp = await fetch("words.json", { cache: "no-store" });
-  WORDS = await rsp.json();
-  if (!Array.isArray(WORDS) || WORDS.length === 0) throw new Error("words.json пустой или неверный");
-  state.i = 0;
-  setStats();
-  render();
-}
-
+/**
+ * ВАЖНОЕ ИЗМЕНЕНИЕ:
+ * - EN->RU: показываем произношение в подписи (как раньше)
+ * - RU->EN: НЕ показываем произношение в подписи, чтобы не было подсказки
+ */
 function promptText(w) {
   if (state.dir === "en-ru") {
-    return { prompt: w.display, sub: `произношение: ${w.pron}${w.note ? " • " + w.note : ""}` };
+    return {
+      prompt: w.display,
+      sub: `произношение: ${w.pron}${w.note ? " • " + w.note : ""}`,
+    };
   } else {
-    return { prompt: w.ru, sub: `подсказка произношения (EN): ${w.pron}${w.note ? " • " + w.note : ""}` };
+    return {
+      prompt: w.ru,
+      sub: w.note ? `Примечание: ${w.note}` : "",
+    };
   }
 }
 
@@ -82,9 +84,19 @@ function next() {
   render();
 }
 
+async function loadWords() {
+  const rsp = await fetch("words.json", { cache: "no-store" });
+  WORDS = await rsp.json();
+  if (!Array.isArray(WORDS) || WORDS.length === 0) throw new Error("words.json пустой или неверный");
+  state.i = 0;
+  setStats();
+  render();
+}
+
 function render() {
   $("mode").value = state.mode;
   $("dir").value = state.dir;
+
   const screen = $("screen");
   screen.innerHTML = "";
 
@@ -121,12 +133,18 @@ function renderList(root) {
   root.appendChild(box);
 
   const tbody = box.querySelector("#tbody");
+
   function draw(filter = "") {
     tbody.innerHTML = "";
     const f = norm(filter);
     for (const w of WORDS) {
-      const hit = !f || norm(w.display).includes(f) || norm(w.lookup).includes(f) || norm(w.ru).includes(f);
+      const hit =
+        !f ||
+        norm(w.display).includes(f) ||
+        norm(w.lookup).includes(f) ||
+        norm(w.ru).includes(f);
       if (!hit) continue;
+
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td class="mono">${escapeHtml(w.display)}</td>
@@ -136,7 +154,8 @@ function renderList(root) {
       `;
       tbody.appendChild(tr);
     }
-    tbody.querySelectorAll("button[data-audio]").forEach(btn => {
+
+    tbody.querySelectorAll("button[data-audio]").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const lk = btn.getAttribute("data-audio");
         await playAudio(lk, btn);
@@ -182,12 +201,21 @@ function renderCards(root) {
   const ans = wrap.querySelector("#ans");
   ans.textContent = answerText(w);
 
-  wrap.querySelector("#flip").onclick = () => { state.showAnswer = !state.showAnswer; render(); };
+  wrap.querySelector("#flip").onclick = () => {
+    state.showAnswer = !state.showAnswer;
+    render();
+  };
   wrap.querySelector("#n").onclick = () => next();
   wrap.querySelector("#audio").onclick = async () => playAudio(w.lookup, wrap.querySelector("#audio"));
 
-  wrap.querySelector("#okBtn").onclick = () => { mark(true); next(); };
-  wrap.querySelector("#badBtn").onclick = () => { mark(false); next(); };
+  wrap.querySelector("#okBtn").onclick = () => {
+    mark(true);
+    next();
+  };
+  wrap.querySelector("#badBtn").onclick = () => {
+    mark(false);
+    next();
+  };
 }
 
 function renderMCQ(root) {
@@ -195,6 +223,7 @@ function renderMCQ(root) {
   const { prompt, sub } = promptText(w);
 
   const choices = buildChoices(w, 4);
+
   const wrap = document.createElement("div");
   wrap.innerHTML = `
     <div class="big">${escapeHtml(prompt)}</div>
@@ -218,7 +247,7 @@ function renderMCQ(root) {
 
   const opts = wrap.querySelector("#opts");
   const ans = wrap.querySelector("#ans");
-  const correctVal = (state.dir === "en-ru") ? w.ru : w.display;
+  const correctVal = state.dir === "en-ru" ? w.ru : w.display;
 
   for (const c of choices) {
     const btn = document.createElement("button");
@@ -244,7 +273,7 @@ function renderDictation(root) {
   const wrap = document.createElement("div");
   wrap.innerHTML = `
     <div class="big">🔊 Слушай и введи слово</div>
-    <p class="sub">Подсказка (рус.): ${escapeHtml(w.ru)} • (нажми <span class="kbd">Space</span> чтобы повторить аудио)</p>
+    <p class="sub">Подсказка (рус.): ${escapeHtml(w.ru)} • (Space — повторить аудио)</p>
 
     <div class="hr"></div>
 
@@ -258,7 +287,7 @@ function renderDictation(root) {
 
     <label>Ваш ответ (English)</label>
     <input id="inp" placeholder="введите услышанное слово и Enter" />
-    <div class="hint">Принимаются также ваши 3 опечатки (meusures/continuosly/repits).</div>
+    <div class="hint">Принимаются также ваши 3 опечатки (meusures/continuosly/repits), если они есть в списке.</div>
 
     <div class="hr"></div>
     <div id="ans" class="ans" style="display:none; white-space:pre-line"></div>
@@ -269,15 +298,17 @@ function renderDictation(root) {
   const ans = wrap.querySelector("#ans");
 
   const accepted = new Set([norm(w.display), norm(w.lookup)]);
-  // разрешаем исходные опечатки как ввод
-  if (w.note && w.display) accepted.add(norm(w.display));
+  if (w.display) accepted.add(norm(w.display)); // на всякий случай
+  // если display отличается от lookup (как при опечатке), разрешим ввод display тоже
+  if (norm(w.display) !== norm(w.lookup)) accepted.add(norm(w.display));
 
   function check() {
     const v = norm(inp.value);
     const ok = accepted.has(v);
     mark(ok);
     ans.style.display = "block";
-    ans.textContent = `Правильный ответ: ${w.display} (lookup: ${w.lookup})\n` + answerText(w);
+    ans.textContent =
+      `Правильный ответ: ${w.display} (lookup: ${w.lookup})\n` + answerText(w);
     setTimeout(() => next(), 800);
   }
 
@@ -286,64 +317,56 @@ function renderDictation(root) {
   });
 
   wrap.querySelector("#play").onclick = async () => playAudio(w.lookup, wrap.querySelector("#play"));
-  wrap.querySelector("#show").onclick = () => { ans.style.display = "block"; ans.textContent = answerText(w); };
+  wrap.querySelector("#show").onclick = () => {
+    ans.style.display = "block";
+    ans.textContent = answerText(w);
+  };
   wrap.querySelector("#n").onclick = () => next();
-
-  // автопроигрывание при входе (если пользователь уже взаимодействовал с страницей, иначе браузер может блокировать)
 }
 
 function buildChoices(w, n = 4) {
-  const pool = WORDS.filter(x => x !== w);
+  const pool = WORDS.filter((x) => x !== w);
   const pick = shuffle(pool).slice(0, n - 1);
-  const correct = (state.dir === "en-ru") ? w.ru : w.display;
-  const arr = [...pick.map(x => (state.dir === "en-ru") ? x.ru : x.display), correct];
+  const correct = state.dir === "en-ru" ? w.ru : w.display;
+  const arr = [...pick.map((x) => (state.dir === "en-ru" ? x.ru : x.display)), correct];
   return shuffle(arr);
 }
 
-/**
- * Аудио: берём "запись" с Wiktionary:
- * 1) GET https://en.wiktionary.org/api/rest_v1/page/media-list/{word}  -> находим item.title с en-us/en-uk
- * 2) GET https://commons.wikimedia.org/w/api.php?action=query&prop=imageinfo&iiprop=url&titles=File:...&origin=* -> прямой URL
- * Основание: endpoint media-list используется для поиска произношений. (см. пример в источнике) 
- */
 async function getAudioUrl(lookup) {
   const key = norm(lookup);
   if (state.audioCache.has(key)) return state.audioCache.get(key);
 
-  // 1) media-list
   const mediaUrl = `https://en.wiktionary.org/api/rest_v1/page/media-list/${encodeURIComponent(lookup)}`;
   let data;
   try {
     const rsp = await fetch(mediaUrl, { cache: "no-store" });
     if (!rsp.ok) throw new Error(`media-list HTTP ${rsp.status}`);
     data = await rsp.json();
-  } catch (e) {
+  } catch {
     state.audioCache.set(key, null);
     return null;
   }
 
   const items = Array.isArray(data?.items) ? data.items : [];
-  // предпочтение: US -> UK -> CA -> любое "eng"
   const prefer = ["en-us", "en-uk", "en-ca", "eng"];
   let fileTitle = null;
 
   for (const tag of prefer) {
-    const found = items.find(it => {
+    const found = items.find((it) => {
       const t = (it?.title || "").toLowerCase();
-      const okAudioType = (it?.audio_type ? (it.audio_type === "generic") : true);
       const looksAudio = t.includes(".ogg") || t.includes(".oga") || t.includes(".wav") || t.includes(".mp3");
-      return okAudioType && looksAudio && t.includes(tag);
+      return looksAudio && t.includes(tag);
     });
-    if (found?.title) { fileTitle = found.title; break; }
+    if (found?.title) {
+      fileTitle = found.title;
+      break;
+    }
   }
 
-  // если не нашли по тегам — берём любой аудио файл
   if (!fileTitle) {
-    const found = items.find(it => {
+    const found = items.find((it) => {
       const t = (it?.title || "").toLowerCase();
-      const okAudioType = (it?.audio_type ? (it.audio_type === "generic") : true);
-      const looksAudio = t.includes(".ogg") || t.includes(".oga") || t.includes(".wav") || t.includes(".mp3");
-      return okAudioType && looksAudio;
+      return t.includes(".ogg") || t.includes(".oga") || t.includes(".wav") || t.includes(".mp3");
     });
     if (found?.title) fileTitle = found.title;
   }
@@ -355,7 +378,6 @@ async function getAudioUrl(lookup) {
 
   if (!fileTitle.toLowerCase().startsWith("file:")) fileTitle = "File:" + fileTitle;
 
-  // 2) commons imageinfo -> direct URL
   const commons = `https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&prop=imageinfo&iiprop=url&titles=${encodeURIComponent(fileTitle)}`;
 
   try {
@@ -367,7 +389,7 @@ async function getAudioUrl(lookup) {
     const url = page?.imageinfo?.[0]?.url || null;
     state.audioCache.set(key, url);
     return url;
-  } catch (e) {
+  } catch {
     state.audioCache.set(key, null);
     return null;
   }
@@ -375,21 +397,27 @@ async function getAudioUrl(lookup) {
 
 async function playAudio(lookup, btn) {
   const old = btn?.textContent;
-  if (btn) { btn.textContent = "⏳"; btn.disabled = true; }
+  if (btn) {
+    btn.textContent = "⏳";
+    btn.disabled = true;
+  }
 
   const url = await getAudioUrl(lookup);
 
-  if (btn) { btn.textContent = old; btn.disabled = false; }
+  if (btn) {
+    btn.textContent = old;
+    btn.disabled = false;
+  }
 
   if (!url) {
-    alert(`Аудио не найдено на Wiktionary для: ${lookup}\nПопробуйте другое слово или проверьте написание.`);
+    alert(`Аудио не найдено для: ${lookup}\nЕсли слово написано с ошибкой — проверьте "lookup" в words.json.`);
     return;
   }
 
   try {
     const a = new Audio(url);
     a.play();
-  } catch (e) {
+  } catch {
     window.open(url, "_blank");
   }
 }
@@ -397,20 +425,25 @@ async function playAudio(lookup, btn) {
 function bindHotkeys() {
   document.onkeydown = async (e) => {
     if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+
     if (e.key === "n" || e.key === "N") next();
 
     if (e.code === "Space") {
       e.preventDefault();
       const w = current();
-      if (state.mode === "cards") { state.showAnswer = !state.showAnswer; render(); }
-      if (state.mode === "dict") { await playAudio(w.lookup, null); }
-      if (state.mode === "mcq") { await playAudio(w.lookup, null); }
+      if (state.mode === "cards") {
+        state.showAnswer = !state.showAnswer;
+        render();
+      } else if (state.mode === "dict" || state.mode === "mcq") {
+        await playAudio(w.lookup, null);
+      }
     }
   };
 }
 
 function escapeHtml(s) {
-  return (s ?? "").toString()
+  return (s ?? "")
+    .toString()
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -418,9 +451,16 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
-$("mode").addEventListener("change", (e) => { state.mode = e.target.value; render(); });
-$("dir").addEventListener("change", (e) => { state.dir = e.target.value; render(); });
+$("mode").addEventListener("change", (e) => {
+  state.mode = e.target.value;
+  render();
+});
 
-loadWords().catch(err => {
+$("dir").addEventListener("change", (e) => {
+  state.dir = e.target.value;
+  render();
+});
+
+loadWords().catch((err) => {
   $("screen").innerHTML = `<div class="ans">Ошибка загрузки: ${escapeHtml(err.message)}</div>`;
 });

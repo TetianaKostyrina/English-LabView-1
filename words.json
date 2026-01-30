@@ -1,29 +1,129 @@
-[
-  { "en":"embedded", "lookup":"embedded", "ru":"встроенный (о системе/ПО)", "pron":"имбЭдид" },
-  { "en":"sensor", "lookup":"sensor", "ru":"датчик", "pron":"сЭнсор" },
-  { "en":"actuator", "lookup":"actuator", "ru":"исполнительный механизм (актуатор)", "pron":"Экчуэйтор" },
-  { "en":"software", "lookup":"software", "ru":"программное обеспечение", "pron":"сОфтвэр" },
-  { "en":"storage", "lookup":"storage", "ru":"хранилище / накопитель", "pron":"стОридж" },
-  { "en":"hardware", "lookup":"hardware", "ru":"аппаратное обеспечение", "pron":"хАрдвэр" },
-  { "en":"semiconductor", "lookup":"semiconductor", "ru":"полупроводник", "pron":"сэмикэндАкта(р)" },
+:root {
+  --bg: #0b0f16;
+  --card: #121a26;
+  --text: #e7eefc;
+  --muted: #a7b4cf;
+  --border: #22314b;
+  --ok: #2bd576;
+  --bad: #ff5c7c;
+  --accent: #5aa7ff;
+}
 
-  { "en":"measures", "lookup":"measures", "ru":"измеряет / измерения / меры (по контексту)", "pron":"мЭжэрз" },
-  { "en":"transfers", "lookup":"transfers", "ru":"передаёт / переносит (данные)", "pron":"трЭнсфэрз" },
-  { "en":"states", "lookup":"states", "ru":"состояния (системы)", "pron":"стЭйтс" },
-  { "en":"button", "lookup":"button", "ru":"кнопка", "pron":"бАтэн" },
-  { "en":"trigger", "lookup":"trigger", "ru":"триггер / запуск (сигнал)", "pron":"трИггэр" },
-  { "en":"receive", "lookup":"receive", "ru":"получать / принимать", "pron":"рисИв" },
-  { "en":"LED", "lookup":"LED", "ru":"светодиод (LED)", "pron":"эл-и-дИ" },
-  { "en":"trying", "lookup":"trying", "ru":"пытается / попытка (trying)", "pron":"трАйинг" },
-  { "en":"view", "lookup":"view", "ru":"вид / просмотр", "pron":"вью" },
-  { "en":"varies", "lookup":"varies", "ru":"варьируется / меняется", "pron":"вЭриз" },
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
 
-  { "en":"continuously", "lookup":"continuously", "ru":"непрерывно / постоянно", "pron":"кэнтИньюэсли" },
-  { "en":"safe", "lookup":"safe", "ru":"безопасный", "pron":"сЭйф" },
-  { "en":"frequency", "lookup":"frequency", "ru":"частота", "pron":"фрИквэнси" },
-  { "en":"settings", "lookup":"settings", "ru":"настройки", "pron":"сЭтингз" },
+.top {
+  display: flex;
+  gap: 16px;
+  padding: 18px 16px 8px 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+}
+.title h1 { margin: 0 0 4px 0; font-size: 20px; }
+.title p { margin: 0; color: var(--muted); font-size: 13px; }
 
-  { "en":"repeats", "lookup":"repeats", "ru":"повторяет / повторы", "pron":"рипИтс" },
-  { "en":"secure", "lookup":"secure", "ru":"защищённый / обеспечить безопасность", "pron":"сикьЮр" },
-  { "en":"acquire", "lookup":"acquire", "ru":"получать / захватывать (данные)", "pron":"эквАйр" }
-]
+.controls { display: flex; align-items: center; gap: 10px; }
+.status { color: var(--muted); font-size: 13px; }
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+button {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+}
+button:hover { border-color: #2d436b; }
+button.primary { background: var(--accent); color: #07101f; border-color: transparent; font-weight: 650; }
+.tab.active { border-color: var(--accent); }
+
+.container { padding: 16px; max-width: 980px; margin: 0 auto; }
+
+.panel { display: none; }
+.panel.active { display: block; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+
+.label { color: var(--muted); font-size: 13px; margin-bottom: 6px; }
+.label2 { color: var(--muted); font-size: 12px; margin: 10px 0 8px; }
+
+.big { font-size: 30px; font-weight: 750; letter-spacing: 0.2px; }
+.translation { margin-top: 14px; font-size: 18px; padding: 12px; border-radius: 14px; border: 1px dashed var(--border); }
+.hidden { display: none; }
+.muted { color: var(--muted); font-size: 13px; margin-top: 6px; }
+
+.navrow { margin-top: 14px; }
+.options { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 14px; }
+.feedback { margin-top: 12px; min-height: 22px; font-weight: 650; }
+.feedback.ok { color: var(--ok); }
+.feedback.bad { color: var(--bad); }
+
+.input {
+  width: min(520px, 100%);
+  padding: 12px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #0f1622;
+  color: var(--text);
+  font-size: 16px;
+}
+
+.matchGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 6px;
+}
+@media (max-width: 760px) {
+  .matchGrid { grid-template-columns: 1fr; }
+}
+
+.list { display: grid; gap: 8px; }
+.item {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.02);
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+.item:hover { border-color: #2d436b; }
+.item.selected { outline: 2px solid var(--accent); border-color: transparent; }
+.item.done { opacity: 0.55; cursor: default; }
+.badge { color: var(--muted); font-size: 12px; }
+
+.footer { padding: 14px 16px; border-top: 1px solid var(--border); text-align: center; }

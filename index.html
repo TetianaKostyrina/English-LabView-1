@@ -3,82 +3,134 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>English Words Trainer</title>
-  <style>
-    :root{--bg:#0b0d12;--card:#121625;--muted:#9aa4b2;--text:#e6eaf2;--accent:#5dd6c6}
-    *{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--text)}
-    .wrap{max-width:980px;margin:0 auto;padding:16px}
-    h1{font-size:18px;margin:8px 0 12px}
-    .row{display:flex;gap:10px;flex-wrap:wrap}
-    .card{background:var(--card);border:1px solid #1f2742;border-radius:16px;padding:14px}
-    .grow{flex:1}
-    label{font-size:12px;color:var(--muted)}
-    select,input,button{
-      width:100%; padding:10px 12px; border-radius:12px; border:1px solid #273055;
-      background:#0f1322; color:var(--text); outline:none;
-    }
-    button{cursor:pointer;font-weight:700}
-    button.primary{background:linear-gradient(135deg,#2ee6c2,#4ea1ff);border:none;color:#061018}
-    button.ghost{background:transparent}
-    .big{font-size:28px;font-weight:900;margin:10px 0 4px}
-    .sub{color:var(--muted);font-size:14px;margin:0}
-    .hr{height:1px;background:#1f2742;margin:12px 0}
-    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    @media (max-width:720px){.grid2{grid-template-columns:1fr}}
-    .ans{padding:10px 12px;border-radius:12px;border:1px dashed #2c3763;background:#0b1020}
-    .hint{font-size:12px;color:var(--muted);margin-top:6px}
-    .opts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    .kbd{font-family:ui-monospace,Consolas,monospace;border:1px solid #273055;border-bottom-width:2px;padding:1px 6px;border-radius:8px;color:var(--muted)}
-    table{width:100%;border-collapse:collapse}
-    td,th{border-bottom:1px solid #1f2742;padding:8px 6px;text-align:left;font-size:14px}
-    th{color:var(--muted);font-weight:700}
-    .mono{font-family:ui-monospace,Consolas,monospace}
-    .pill{display:inline-flex;gap:8px;align-items:center;padding:6px 10px;border-radius:999px;border:1px solid #273055;color:var(--muted);font-size:12px}
-  </style>
+  <title>Vocabulary Trainer</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="wrap">
-    <h1>Тренажёр слов (перевод + произношение + аудио)</h1>
-
-    <div class="row">
-      <div class="card grow">
-        <div class="grid2">
-          <div>
-            <label>Режим</label>
-            <select id="mode">
-              <option value="list">1) Список</option>
-              <option value="cards">2) Карточки</option>
-              <option value="mcq">3) Тест (выбор)</option>
-              <option value="dict">4) Диктант (аудио → введи слово)</option>
-            </select>
-          </div>
-          <div>
-            <label>Направление</label>
-            <select id="dir">
-              <option value="en-ru">English → Русский</option>
-              <option value="ru-en">Русский → English</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="hr"></div>
-        <div class="row">
-          <div class="pill">📦 слов: <span id="count">0</span></div>
-          <div class="pill">🔢 №: <span id="idx">0</span></div>
-        </div>
-
-        <div class="hr"></div>
-        <div id="screen"></div>
-      </div>
+  <header class="top">
+    <div class="title">
+      <h1>Тренажёр слов (EN → RU)</h1>
+      <p>4 задания + озвучка (Wiktionary/Commons, fallback: голос браузера)</p>
     </div>
 
-    <p class="hint">
-      🔊 Аудио берётся с Wiktionary/Commons (если для слова есть запись). 🔀 перемешивает порядок.
-      Клавиши: <span class="kbd">Space</span> — показать ответ (в карточках) / повторить аудио (в диктанте), <span class="kbd">N</span> — следующее.
-    </p>
-  </div>
+    <div class="controls">
+      <button id="btnShuffle" class="primary">Перемешать</button>
+      <span id="status" class="status"></span>
+    </div>
+  </header>
 
-  <!-- v=5 чтобы избежать кэша -->
-  <script src="app.js?v=5"></script>
+  <nav class="tabs" role="tablist" aria-label="Режимы">
+    <button class="tab active" data-tab="cards" role="tab" aria-selected="true">1) Карточки</button>
+    <button class="tab" data-tab="mcq" role="tab" aria-selected="false">2) Выбор перевода</button>
+    <button class="tab" data-tab="typing" role="tab" aria-selected="false">3) Ввод слова</button>
+    <button class="tab" data-tab="match" role="tab" aria-selected="false">4) Соответствия</button>
+  </nav>
+
+  <main class="container">
+    <!-- Карточки -->
+    <section id="cards" class="panel active" role="tabpanel">
+      <div class="card">
+        <div class="row">
+          <div>
+            <div class="label">Слово</div>
+            <div id="cardWord" class="big"></div>
+            <div id="cardPron" class="muted"></div>
+          </div>
+          <div class="actions">
+            <button id="btnSpeakCard">🔊 Озвучить</button>
+            <button id="btnReveal">Показать перевод</button>
+          </div>
+        </div>
+        <div id="cardTranslation" class="translation hidden"></div>
+
+        <div class="row navrow">
+          <button id="btnPrev">← Назад</button>
+          <div id="cardIndex" class="muted"></div>
+          <button id="btnNext">Дальше →</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- MCQ -->
+    <section id="mcq" class="panel" role="tabpanel">
+      <div class="card">
+        <div class="row">
+          <div>
+            <div class="label">Выберите перевод</div>
+            <div id="mcqWord" class="big"></div>
+            <div id="mcqPron" class="muted"></div>
+          </div>
+          <div class="actions">
+            <button id="btnSpeakMcq">🔊 Озвучить</button>
+            <button id="btnMcqNext">Следующий</button>
+          </div>
+        </div>
+
+        <div id="mcqOptions" class="options"></div>
+        <div id="mcqFeedback" class="feedback"></div>
+        <div class="muted" id="mcqIndex"></div>
+      </div>
+    </section>
+
+    <!-- Typing -->
+    <section id="typing" class="panel" role="tabpanel">
+      <div class="card">
+        <div class="row">
+          <div>
+            <div class="label">Введите английское слово</div>
+            <div id="typePrompt" class="big"></div>
+            <div class="muted">Подсказка: слушайте озвучку</div>
+          </div>
+          <div class="actions">
+            <button id="btnSpeakType">🔊 Озвучить</button>
+            <button id="btnTypeNext">Следующий</button>
+          </div>
+        </div>
+
+        <div class="row">
+          <input id="typeInput" class="input" placeholder="Введите слово (EN)..." autocomplete="off" />
+          <button id="btnCheckType" class="primary">Проверить</button>
+        </div>
+
+        <div id="typeFeedback" class="feedback"></div>
+        <div class="muted" id="typeIndex"></div>
+      </div>
+    </section>
+
+    <!-- Matching -->
+    <section id="match" class="panel" role="tabpanel">
+      <div class="card">
+        <div class="row">
+          <div>
+            <div class="label">Сопоставьте пары</div>
+            <div class="muted">Нажмите слово слева, затем перевод справа</div>
+          </div>
+          <div class="actions">
+            <button id="btnResetMatch">Сбросить пары</button>
+          </div>
+        </div>
+
+        <div class="matchGrid">
+          <div>
+            <div class="label2">EN</div>
+            <div id="matchLeft" class="list"></div>
+          </div>
+          <div>
+            <div class="label2">RU</div>
+            <div id="matchRight" class="list"></div>
+          </div>
+        </div>
+
+        <div id="matchFeedback" class="feedback"></div>
+        <div class="muted" id="matchProgress"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer muted">
+    <small>Для GitHub Pages: Settings → Pages → Deploy from branch (main / root).</small>
+  </footer>
+
+  <script src="app.js"></script>
 </body>
 </html>

@@ -5,19 +5,12 @@ let state = {
   mode: "list",
   dir: "en-ru",
   i: 0,
-  ok: 0,
-  bad: 0,
-  streak: 0,
   showAnswer: false,
   audioCache: new Map(), // lookup -> url|null
 };
 
 function norm(s) {
-  return (s ?? "")
-    .toString()
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
+  return (s ?? "").toString().trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 function shuffle(a) {
@@ -40,48 +33,9 @@ function current() {
   return WORDS[state.i % WORDS.length];
 }
 
-function setStats() {
-  $("ok").textContent = state.ok;
-  $("bad").textContent = state.bad;
-  $("streak").textContent = state.streak;
+function setTopStats() {
   $("count").textContent = WORDS.length;
-}
-
-/**
- * EN->RU: подпись показывает произношение.
- * RU->EN: подпись НЕ показывает произношение (чтобы не было подсказки).
- */
-function promptText(w) {
-  if (state.dir === "en-ru") {
-    return {
-      prompt: w.display,
-      sub: `произношение: ${w.pron}${w.note ? " • " + w.note : ""}`,
-    };
-  } else {
-    return {
-      prompt: w.ru,
-      sub: w.note ? `Примечание: ${w.note}` : "",
-    };
-  }
-}
-
-function answerText(w) {
-  if (state.dir === "en-ru") {
-    return `Русский: ${w.ru}\nПроизношение (кириллица): ${w.pron}`;
-  } else {
-    return `English: ${w.display}\nПроизношение (кириллица): ${w.pron}`;
-  }
-}
-
-function mark(correct) {
-  if (correct) {
-    state.ok += 1;
-    state.streak += 1;
-  } else {
-    state.bad += 1;
-    state.streak = 0;
-  }
-  setStats();
+  $("idx").textContent = WORDS.length ? (state.i + 1) : 0;
 }
 
 function next() {
@@ -90,14 +44,31 @@ function next() {
   render();
 }
 
+/**
+ * EN->RU: показываем произношение в подписи.
+ * RU->EN: подпись пустая, чтобы не подсказывать.
+ */
+function promptText(w) {
+  if (state.dir === "en-ru") return { prompt: w.en, sub: `произношение: ${w.pron}` };
+  return { prompt: w.ru, sub: "" };
+}
+
+function answerText(w) {
+  if (state.dir === "en-ru") {
+    return `Русский: ${w.ru}\nПроизношение (кириллица): ${w.pron}`;
+  } else {
+    return `English: ${w.en}\nПроизношение (кириллица): ${w.pron}`;
+  }
+}
+
 async function loadWords() {
   const rsp = await fetch("words.json", { cache: "no-store" });
   WORDS = await rsp.json();
   if (!Array.isArray(WORDS) || WORDS.length === 0) throw new Error("words.json пустой или неверный");
-  // начнём с перемешанного порядка
+
   WORDS = shuffle(WORDS);
   state.i = 0;
-  setStats();
+  setTopStats();
   render();
 }
 
@@ -107,6 +78,8 @@ function render() {
 
   const screen = $("screen");
   screen.innerHTML = "";
+
+  setTopStats();
 
   if (state.mode === "list") renderList(screen);
   if (state.mode === "cards") renderCards(screen);
@@ -148,23 +121,24 @@ function renderList(root) {
   root.appendChild(box);
 
   box.querySelector("#mix").onclick = () => reshuffleWords();
-
   const tbody = box.querySelector("#tbody");
 
   function draw(filter = "") {
     tbody.innerHTML = "";
     const f = norm(filter);
+
     for (const w of WORDS) {
       const hit =
         !f ||
-        norm(w.display).includes(f) ||
+        norm(w.en).includes(f) ||
         norm(w.lookup).includes(f) ||
         norm(w.ru).includes(f);
+
       if (!hit) continue;
 
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td class="mono">${escapeHtml(w.display)}</td>
+        <td class="mono">${escapeHtml(w.en)}</td>
         <td>${escapeHtml(w.ru)}</td>
         <td>${escapeHtml(w.pron || "")}</td>
         <td><button class="ghost" data-audio="${escapeHtml(w.lookup)}">🔊</button></td>
@@ -174,8 +148,7 @@ function renderList(root) {
 
     tbody.querySelectorAll("button[data-audio]").forEach((btn) => {
       btn.addEventListener("click", async () => {
-        const lk = btn.getAttribute("data-audio");
-        await playAudio(lk, btn);
+        await playAudio(btn.getAttribute("data-audio"), btn);
       });
     });
   }
@@ -206,35 +179,16 @@ function renderCards(root) {
     <div class="hr"></div>
 
     <div id="ans" class="ans" style="display:${state.showAnswer ? "block" : "none"}; white-space:pre-line"></div>
-
-    <div class="hr"></div>
-
-    <div class="row">
-      <button class="good" id="okBtn">Знаю</button>
-      <button class="bad" id="badBtn">Не знаю</button>
-    </div>
   `;
   root.appendChild(wrap);
 
   const ans = wrap.querySelector("#ans");
   ans.textContent = answerText(w);
 
-  wrap.querySelector("#flip").onclick = () => {
-    state.showAnswer = !state.showAnswer;
-    render();
-  };
+  wrap.querySelector("#flip").onclick = () => { state.showAnswer = !state.showAnswer; render(); };
   wrap.querySelector("#n").onclick = () => next();
-  wrap.querySelector("#audio").onclick = async () => playAudio(w.lookup, wrap.querySelector("#audio"));
   wrap.querySelector("#mix").onclick = () => reshuffleWords();
-
-  wrap.querySelector("#okBtn").onclick = () => {
-    mark(true);
-    next();
-  };
-  wrap.querySelector("#badBtn").onclick = () => {
-    mark(false);
-    next();
-  };
+  wrap.querySelector("#audio").onclick = async () => playAudio(w.lookup, wrap.querySelector("#audio"));
 }
 
 function renderMCQ(root) {
@@ -242,6 +196,7 @@ function renderMCQ(root) {
   const { prompt, sub } = promptText(w);
 
   const choices = buildChoices(w, 4);
+  const correctVal = state.dir === "en-ru" ? w.ru : w.en;
 
   const wrap = document.createElement("div");
   wrap.innerHTML = `
@@ -253,11 +208,10 @@ function renderMCQ(root) {
     <div class="row">
       <button class="ghost" id="audio">🔊 Аудио</button>
       <button class="ghost" id="mix">🔀 Перемешать</button>
-      <button class="ghost" id="n">Пропустить (<span class="kbd">N</span>)</button>
+      <button class="ghost" id="n">Следующее (<span class="kbd">N</span>)</button>
     </div>
 
     <div class="hr"></div>
-
     <div class="opts" id="opts"></div>
 
     <div class="hr"></div>
@@ -266,10 +220,11 @@ function renderMCQ(root) {
   root.appendChild(wrap);
 
   wrap.querySelector("#mix").onclick = () => reshuffleWords();
+  wrap.querySelector("#n").onclick = () => next();
+  wrap.querySelector("#audio").onclick = async () => playAudio(w.lookup, wrap.querySelector("#audio"));
 
   const opts = wrap.querySelector("#opts");
   const ans = wrap.querySelector("#ans");
-  const correctVal = state.dir === "en-ru" ? w.ru : w.display;
 
   for (const c of choices) {
     const btn = document.createElement("button");
@@ -277,16 +232,11 @@ function renderMCQ(root) {
     btn.textContent = c;
     btn.onclick = () => {
       const ok = norm(c) === norm(correctVal);
-      mark(ok);
       ans.style.display = "block";
-      ans.textContent = answerText(w);
-      setTimeout(() => next(), 600);
+      ans.textContent = (ok ? "✅ Верно\n\n" : "❌ Неверно\n\n") + answerText(w);
     };
     opts.appendChild(btn);
   }
-
-  wrap.querySelector("#n").onclick = () => next();
-  wrap.querySelector("#audio").onclick = async () => playAudio(w.lookup, wrap.querySelector("#audio"));
 }
 
 function renderDictation(root) {
@@ -310,7 +260,6 @@ function renderDictation(root) {
 
     <label>Ваш ответ (English)</label>
     <input id="inp" placeholder="введите услышанное слово и Enter" />
-    <div class="hint">Если в списке слово с опечаткой — ввод этого варианта тоже принимается.</div>
 
     <div class="hr"></div>
     <div id="ans" class="ans" style="display:none; white-space:pre-line"></div>
@@ -318,22 +267,21 @@ function renderDictation(root) {
   root.appendChild(wrap);
 
   wrap.querySelector("#mix").onclick = () => reshuffleWords();
+  wrap.querySelector("#n").onclick = () => next();
 
   const inp = wrap.querySelector("#inp");
   const ans = wrap.querySelector("#ans");
 
-  const accepted = new Set([norm(w.lookup), norm(w.display)]);
-  // если display != lookup (опечатка), принимаем оба
-  if (norm(w.display) !== norm(w.lookup)) accepted.add(norm(w.display));
+  const accepted = new Set([norm(w.en), norm(w.lookup)]);
+
+  function showResult(ok) {
+    ans.style.display = "block";
+    ans.textContent = (ok ? "✅ Верно\n\n" : "❌ Неверно\n\n") + answerText(w);
+  }
 
   function check() {
     const v = norm(inp.value);
-    const ok = accepted.has(v);
-    mark(ok);
-    ans.style.display = "block";
-    ans.textContent =
-      `Правильный ответ: ${w.display} (lookup: ${w.lookup})\n` + answerText(w);
-    setTimeout(() => next(), 800);
+    showResult(accepted.has(v));
   }
 
   inp.addEventListener("keydown", (e) => {
@@ -341,18 +289,14 @@ function renderDictation(root) {
   });
 
   wrap.querySelector("#play").onclick = async () => playAudio(w.lookup, wrap.querySelector("#play"));
-  wrap.querySelector("#show").onclick = () => {
-    ans.style.display = "block";
-    ans.textContent = answerText(w);
-  };
-  wrap.querySelector("#n").onclick = () => next();
+  wrap.querySelector("#show").onclick = () => { ans.style.display = "block"; ans.textContent = answerText(w); };
 }
 
 function buildChoices(w, n = 4) {
   const pool = WORDS.filter((x) => x !== w);
   const pick = shuffle(pool).slice(0, n - 1);
-  const correct = state.dir === "en-ru" ? w.ru : w.display;
-  const arr = [...pick.map((x) => (state.dir === "en-ru" ? x.ru : x.display)), correct];
+  const correct = state.dir === "en-ru" ? w.ru : w.en;
+  const arr = [...pick.map((x) => (state.dir === "en-ru" ? x.ru : x.en)), correct];
   return shuffle(arr);
 }
 
@@ -369,7 +313,7 @@ async function getAudioUrl(lookup) {
   let data;
   try {
     const rsp = await fetch(mediaUrl, { cache: "no-store" });
-    if (!rsp.ok) throw new Error(`media-list HTTP ${rsp.status}`);
+    if (!rsp.ok) throw new Error();
     data = await rsp.json();
   } catch {
     state.audioCache.set(key, null);
@@ -386,10 +330,7 @@ async function getAudioUrl(lookup) {
       const looksAudio = t.includes(".ogg") || t.includes(".oga") || t.includes(".wav") || t.includes(".mp3");
       return looksAudio && t.includes(tag);
     });
-    if (found?.title) {
-      fileTitle = found.title;
-      break;
-    }
+    if (found?.title) { fileTitle = found.title; break; }
   }
 
   if (!fileTitle) {
@@ -411,7 +352,7 @@ async function getAudioUrl(lookup) {
 
   try {
     const rsp = await fetch(commons, { cache: "no-store" });
-    if (!rsp.ok) throw new Error(`commons HTTP ${rsp.status}`);
+    if (!rsp.ok) throw new Error();
     const j = await rsp.json();
     const pages = j?.query?.pages || {};
     const page = Object.values(pages)[0];
@@ -426,20 +367,14 @@ async function getAudioUrl(lookup) {
 
 async function playAudio(lookup, btn) {
   const old = btn?.textContent;
-  if (btn) {
-    btn.textContent = "⏳";
-    btn.disabled = true;
-  }
+  if (btn) { btn.textContent = "⏳"; btn.disabled = true; }
 
   const url = await getAudioUrl(lookup);
 
-  if (btn) {
-    btn.textContent = old;
-    btn.disabled = false;
-  }
+  if (btn) { btn.textContent = old; btn.disabled = false; }
 
   if (!url) {
-    alert(`Аудио не найдено для: ${lookup}\nЕсли слово написано с ошибкой — проверьте "lookup" в words.json.`);
+    alert(`Аудио не найдено для: ${lookup}`);
     return;
   }
 
@@ -463,7 +398,7 @@ function bindHotkeys() {
       if (state.mode === "cards") {
         state.showAnswer = !state.showAnswer;
         render();
-      } else if (state.mode === "dict" || state.mode === "mcq") {
+      } else if (state.mode === "dict") {
         await playAudio(w.lookup, null);
       }
     }
@@ -480,16 +415,10 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
-$("mode").addEventListener("change", (e) => {
-  state.mode = e.target.value;
-  render();
-});
-
-$("dir").addEventListener("change", (e) => {
-  state.dir = e.target.value;
-  render();
-});
+$("mode").addEventListener("change", (e) => { state.mode = e.target.value; render(); });
+$("dir").addEventListener("change", (e) => { state.dir = e.target.value; render(); });
 
 loadWords().catch((err) => {
   $("screen").innerHTML = `<div class="ans">Ошибка загрузки: ${escapeHtml(err.message)}</div>`;
 });
+

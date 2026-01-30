@@ -1,424 +1,366 @@
-const $ = (id) => document.getElementById(id);
+// ====== СЛОВА (ваш список) ======
+const VOCAB = [
+  { en: "Embedded", ru: "встроенный (встраиваемый)", pron: "эмбэ́дид" },
+  { en: "sensor", ru: "датчик", pron: "се́нсор" },
+  { en: "actuator", ru: "исполнительный механизм (привод)", pron: "э́ктьюэ́йтор" },
+  { en: "software", ru: "программное обеспечение", pron: "со́фтвэа" },
+  { en: "storage", ru: "хранилище / накопитель", pron: "сто́ридж" },
+  { en: "hardware", ru: "аппаратное обеспечение / железо", pron: "ха́рдвэа" },
+  { en: "semiconductor", ru: "полупроводник", pron: "сэ́микэнда́ктор" },
+  { en: "measures", ru: "измеряет / измерения", pron: "ме́жэрз" },
+  { en: "transfers", ru: "передаёт / передачи", pron: "трэ́нсфэрз" },
+  { en: "states", ru: "состояния", pron: "стэ́йтс" },
+  { en: "button", ru: "кнопка", pron: "ба́тн" },
+  { en: "trigger", ru: "триггер; запускать/срабатывать", pron: "три́гэр" },
+  { en: "receive", ru: "получать / принимать", pron: "рисíв" },
+  { en: "LED", ru: "светодиод", pron: "эл-и-ди́" },
+  { en: "trying", ru: "пытаться / попытка", pron: "тра́йинг" },
+  { en: "view", ru: "вид; просмотр", pron: "вью" },
+  { en: "varies", ru: "варьируется / меняется", pron: "вэ́эриз" },
+  { en: "continuously", ru: "непрерывно", pron: "кэнти́ньюэсли" },
+  { en: "safe", ru: "безопасный", pron: "сэйф" },
+  { en: "frequency", ru: "частота", pron: "фри́квэнси" },
+  { en: "settings", ru: "настройки", pron: "сэ́тингз" },
+  { en: "repeats", ru: "повторяет(ся)", pron: "рипи́тс" },
+  { en: "secure", ru: "защищённый / обезопасить", pron: "сикью́р" },
+  { en: "acquire", ru: "получать (данные), захватывать", pron: "эква́йэр" }
+];
 
-let WORDS = [];
-let state = {
-  mode: "list",
-  dir: "en-ru",
-  i: 0,
-  showAnswer: false,
-  audioCache: new Map(), // lookup -> url|null
-};
+// ====== УТИЛИТЫ ======
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
-function norm(s) {
-  return (s ?? "").toString().trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-function shuffle(a) {
-  const b = a.slice();
-  for (let i = b.length - 1; i > 0; i--) {
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [b[i], b[j]] = [b[j], b[i]];
+    [a[i], a[j]] = [a[j], a[i]];
   }
-  return b;
+  return a;
 }
+function sample(arr, n) { return shuffle(arr).slice(0, n); }
 
-function reshuffleWords() {
-  WORDS = shuffle(WORDS);
-  state.i = 0;
-  state.showAnswer = false;
-  render();
-}
+let deck = shuffle(VOCAB);
+let currentTab = "cards";
 
-function current() {
-  return WORDS[state.i % WORDS.length];
-}
+// ====== AUDIO: Wiktionary/Commons через MediaWiki API + fallback SpeechSynthesis ======
+const audioCache = new Map(); // word -> url|null
 
-function setTopStats() {
-  $("count").textContent = WORDS.length;
-  $("idx").textContent = WORDS.length ? (state.i + 1) : 0;
-}
+async function getWiktionaryAudioURL(word) {
+  if (audioCache.has(word)) return audioCache.get(word);
 
-function next() {
-  state.showAnswer = false;
-  state.i = (state.i + 1) % WORDS.length;
-  render();
-}
-
-/**
- * EN->RU: показываем произношение в подписи.
- * RU->EN: подпись пустая, чтобы не подсказывать.
- */
-function promptText(w) {
-  if (state.dir === "en-ru") return { prompt: w.en, sub: `произношение: ${w.pron}` };
-  return { prompt: w.ru, sub: "" };
-}
-
-function answerText(w) {
-  if (state.dir === "en-ru") {
-    return `Русский: ${w.ru}\nПроизношение (кириллица): ${w.pron}`;
-  } else {
-    return `English: ${w.en}\nПроизношение (кириллица): ${w.pron}`;
-  }
-}
-
-async function loadWords() {
-  const rsp = await fetch("words.json", { cache: "no-store" });
-  WORDS = await rsp.json();
-  if (!Array.isArray(WORDS) || WORDS.length === 0) throw new Error("words.json пустой или неверный");
-
-  WORDS = shuffle(WORDS);
-  state.i = 0;
-  setTopStats();
-  render();
-}
-
-function render() {
-  $("mode").value = state.mode;
-  $("dir").value = state.dir;
-
-  const screen = $("screen");
-  screen.innerHTML = "";
-
-  setTopStats();
-
-  if (state.mode === "list") renderList(screen);
-  if (state.mode === "cards") renderCards(screen);
-  if (state.mode === "mcq") renderMCQ(screen);
-  if (state.mode === "dict") renderDictation(screen);
-
-  bindHotkeys();
-}
-
-function renderList(root) {
-  const box = document.createElement("div");
-  box.className = "card";
-  box.style.padding = "0";
-  box.innerHTML = `
-    <div style="padding:14px">
-      <div class="row" style="align-items:flex-end">
-        <div class="grow">
-          <label>Поиск</label>
-          <input id="q" placeholder="например: sensor / датчик" />
-          <div class="hint">В списке можно нажимать 🔊 для аудио.</div>
-        </div>
-        <div style="flex:0 0 180px">
-          <button class="ghost" id="mix">🔀 Перемешать</button>
-        </div>
-      </div>
-    </div>
-    <div class="hr"></div>
-    <div style="padding:0 14px 14px 14px; overflow:auto">
-      <table>
-        <thead>
-          <tr>
-            <th>English</th><th>Русский</th><th>Произн.</th><th>Аудио</th>
-          </tr>
-        </thead>
-        <tbody id="tbody"></tbody>
-      </table>
-    </div>
-  `;
-  root.appendChild(box);
-
-  box.querySelector("#mix").onclick = () => reshuffleWords();
-  const tbody = box.querySelector("#tbody");
-
-  function draw(filter = "") {
-    tbody.innerHTML = "";
-    const f = norm(filter);
-
-    for (const w of WORDS) {
-      const hit =
-        !f ||
-        norm(w.en).includes(f) ||
-        norm(w.lookup).includes(f) ||
-        norm(w.ru).includes(f);
-
-      if (!hit) continue;
-
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td class="mono">${escapeHtml(w.en)}</td>
-        <td>${escapeHtml(w.ru)}</td>
-        <td>${escapeHtml(w.pron || "")}</td>
-        <td><button class="ghost" data-audio="${escapeHtml(w.lookup)}">🔊</button></td>
-      `;
-      tbody.appendChild(tr);
-    }
-
-    tbody.querySelectorAll("button[data-audio]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        await playAudio(btn.getAttribute("data-audio"), btn);
-      });
-    });
-  }
-
-  const q = box.querySelector("#q");
-  q.addEventListener("input", () => draw(q.value));
-  draw("");
-}
-
-function renderCards(root) {
-  const w = current();
-  const { prompt, sub } = promptText(w);
-
-  const wrap = document.createElement("div");
-  wrap.innerHTML = `
-    <div class="big">${escapeHtml(prompt)}</div>
-    <p class="sub">${escapeHtml(sub)}</p>
-
-    <div class="hr"></div>
-
-    <div class="row">
-      <button class="primary" id="flip">Показать ответ (<span class="kbd">Space</span>)</button>
-      <button class="ghost" id="audio">🔊 Аудио</button>
-      <button class="ghost" id="mix">🔀 Перемешать</button>
-      <button class="ghost" id="n">Следующее (<span class="kbd">N</span>)</button>
-    </div>
-
-    <div class="hr"></div>
-
-    <div id="ans" class="ans" style="display:${state.showAnswer ? "block" : "none"}; white-space:pre-line"></div>
-  `;
-  root.appendChild(wrap);
-
-  const ans = wrap.querySelector("#ans");
-  ans.textContent = answerText(w);
-
-  wrap.querySelector("#flip").onclick = () => { state.showAnswer = !state.showAnswer; render(); };
-  wrap.querySelector("#n").onclick = () => next();
-  wrap.querySelector("#mix").onclick = () => reshuffleWords();
-  wrap.querySelector("#audio").onclick = async () => playAudio(w.lookup, wrap.querySelector("#audio"));
-}
-
-function renderMCQ(root) {
-  const w = current();
-  const { prompt, sub } = promptText(w);
-
-  const choices = buildChoices(w, 4);
-  const correctVal = state.dir === "en-ru" ? w.ru : w.en;
-
-  const wrap = document.createElement("div");
-  wrap.innerHTML = `
-    <div class="big">${escapeHtml(prompt)}</div>
-    <p class="sub">${escapeHtml(sub)}</p>
-
-    <div class="hr"></div>
-
-    <div class="row">
-      <button class="ghost" id="audio">🔊 Аудио</button>
-      <button class="ghost" id="mix">🔀 Перемешать</button>
-      <button class="ghost" id="n">Следующее (<span class="kbd">N</span>)</button>
-    </div>
-
-    <div class="hr"></div>
-    <div class="opts" id="opts"></div>
-
-    <div class="hr"></div>
-    <div id="ans" class="ans" style="display:none; white-space:pre-line"></div>
-  `;
-  root.appendChild(wrap);
-
-  wrap.querySelector("#mix").onclick = () => reshuffleWords();
-  wrap.querySelector("#n").onclick = () => next();
-  wrap.querySelector("#audio").onclick = async () => playAudio(w.lookup, wrap.querySelector("#audio"));
-
-  const opts = wrap.querySelector("#opts");
-  const ans = wrap.querySelector("#ans");
-
-  for (const c of choices) {
-    const btn = document.createElement("button");
-    btn.className = "ghost";
-    btn.textContent = c;
-    btn.onclick = () => {
-      const ok = norm(c) === norm(correctVal);
-      ans.style.display = "block";
-      ans.textContent = (ok ? "✅ Верно\n\n" : "❌ Неверно\n\n") + answerText(w);
-    };
-    opts.appendChild(btn);
-  }
-}
-
-function renderDictation(root) {
-  const w = current();
-
-  const wrap = document.createElement("div");
-  wrap.innerHTML = `
-    <div class="big">🔊 Слушай и введи слово</div>
-    <p class="sub">Подсказка (рус.): ${escapeHtml(w.ru)} • (Space — повторить аудио)</p>
-
-    <div class="hr"></div>
-
-    <div class="row">
-      <button class="primary" id="play">▶️ Проиграть аудио</button>
-      <button class="ghost" id="mix">🔀 Перемешать</button>
-      <button class="ghost" id="show">Показать ответ</button>
-      <button class="ghost" id="n">Следующее (<span class="kbd">N</span>)</button>
-    </div>
-
-    <div class="hr"></div>
-
-    <label>Ваш ответ (English)</label>
-    <input id="inp" placeholder="введите услышанное слово и Enter" />
-
-    <div class="hr"></div>
-    <div id="ans" class="ans" style="display:none; white-space:pre-line"></div>
-  `;
-  root.appendChild(wrap);
-
-  wrap.querySelector("#mix").onclick = () => reshuffleWords();
-  wrap.querySelector("#n").onclick = () => next();
-
-  const inp = wrap.querySelector("#inp");
-  const ans = wrap.querySelector("#ans");
-
-  const accepted = new Set([norm(w.en), norm(w.lookup)]);
-
-  function showResult(ok) {
-    ans.style.display = "block";
-    ans.textContent = (ok ? "✅ Верно\n\n" : "❌ Неверно\n\n") + answerText(w);
-  }
-
-  function check() {
-    const v = norm(inp.value);
-    showResult(accepted.has(v));
-  }
-
-  inp.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") check();
+  // 1) Получаем список файлов (images) со страницы слова
+  const pageUrl = new URL("https://en.wiktionary.org/w/api.php");
+  pageUrl.search = new URLSearchParams({
+    action: "query",
+    prop: "images",
+    titles: word,
+    format: "json",
+    origin: "*"
   });
 
-  wrap.querySelector("#play").onclick = async () => playAudio(w.lookup, wrap.querySelector("#play"));
-  wrap.querySelector("#show").onclick = () => { ans.style.display = "block"; ans.textContent = answerText(w); };
+  const pageJson = await fetch(pageUrl).then(r => r.json());
+  const pages = pageJson?.query?.pages;
+  const pageId = pages ? Object.keys(pages)[0] : null;
+  const images = pageId ? (pages[pageId].images || []) : [];
+
+  // Ищем типичные файлы произношения (варианты встречаются разные):
+  // File:en-us-word.ogg, File:En-us-word.ogg, иногда mp3/wav
+  const file = images
+    .map(x => x.title)
+    .find(t =>
+      /^File:(en|En)-us-.*\.(ogg|mp3|wav)$/i.test(t) ||
+      /^File:LL-Q1860.*\.(ogg|mp3|wav)$/i.test(t) ||
+      /^File:En-.*\.(ogg|mp3|wav)$/i.test(t)
+    );
+
+  if (!file) {
+    audioCache.set(word, null);
+    return null;
+  }
+
+  // 2) Получаем прямой URL файла через imageinfo
+  const fileUrl = new URL("https://en.wiktionary.org/w/api.php");
+  fileUrl.search = new URLSearchParams({
+    action: "query",
+    prop: "imageinfo",
+    titles: file,
+    iiprop: "url",
+    format: "json",
+    origin: "*"
+  });
+
+  const fileJson = await fetch(fileUrl).then(r => r.json());
+  const fp = fileJson?.query?.pages;
+  const fid = fp ? Object.keys(fp)[0] : null;
+  const url = fid ? (fp[fid]?.imageinfo?.[0]?.url ?? null) : null;
+
+  audioCache.set(word, url);
+  return url;
 }
 
-function buildChoices(w, n = 4) {
-  const pool = WORDS.filter((x) => x !== w);
-  const pick = shuffle(pool).slice(0, n - 1);
-  const correct = state.dir === "en-ru" ? w.ru : w.en;
-  const arr = [...pick.map((x) => (state.dir === "en-ru" ? x.ru : x.en)), correct];
-  return shuffle(arr);
-}
-
-/**
- * Аудио:
- * 1) en.wiktionary.org REST: /page/media-list/{word}
- * 2) commons.wikimedia.org API: imageinfo -> direct url
- */
-async function getAudioUrl(lookup) {
-  const key = norm(lookup);
-  if (state.audioCache.has(key)) return state.audioCache.get(key);
-
-  const mediaUrl = `https://en.wiktionary.org/api/rest_v1/page/media-list/${encodeURIComponent(lookup)}`;
-  let data;
+async function speakWord(word) {
+  // Пытаемся сыграть реальный аудиофайл
   try {
-    const rsp = await fetch(mediaUrl, { cache: "no-store" });
-    if (!rsp.ok) throw new Error();
-    data = await rsp.json();
-  } catch {
-    state.audioCache.set(key, null);
-    return null;
+    const url = await getWiktionaryAudioURL(word);
+    if (url) {
+      const audio = new Audio(url);
+      audio.play();
+      setStatus(`Озвучка: Wiktionary`);
+      return;
+    }
+  } catch (e) {
+    // тихо падаем на fallback
   }
 
-  const items = Array.isArray(data?.items) ? data.items : [];
-  const prefer = ["en-us", "en-uk", "en-ca", "eng"];
-  let fileTitle = null;
+  // Fallback: голос браузера (TTS)
+  const u = new SpeechSynthesisUtterance(word);
+  u.lang = "en-US";
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(u);
+  setStatus(`Озвучка: голос браузера`);
+}
 
-  for (const tag of prefer) {
-    const found = items.find((it) => {
-      const t = (it?.title || "").toLowerCase();
-      const looksAudio = t.includes(".ogg") || t.includes(".oga") || t.includes(".wav") || t.includes(".mp3");
-      return looksAudio && t.includes(tag);
+function setStatus(text) {
+  $("#status").textContent = text || "";
+  if (text) setTimeout(() => { $("#status").textContent = ""; }, 2000);
+}
+
+// ====== ТАБЫ ======
+$$(".tab").forEach(btn => {
+  btn.addEventListener("click", () => {
+    $$(".tab").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    const tab = btn.dataset.tab;
+    currentTab = tab;
+
+    $$(".panel").forEach(p => p.classList.remove("active"));
+    $("#" + tab).classList.add("active");
+
+    // при смене вкладки — обновляем контент
+    renderAll();
+  });
+});
+
+// ====== ПЕРЕМЕШАТЬ ======
+$("#btnShuffle").addEventListener("click", () => {
+  deck = shuffle(deck);
+  resetMcq();
+  resetTyping();
+  resetMatch();
+  setStatus("Перемешано");
+  renderAll();
+});
+
+// ====== 1) КАРТОЧКИ ======
+let cardI = 0;
+$("#btnPrev").addEventListener("click", () => { cardI = (cardI - 1 + deck.length) % deck.length; hideReveal(); renderCards(); });
+$("#btnNext").addEventListener("click", () => { cardI = (cardI + 1) % deck.length; hideReveal(); renderCards(); });
+$("#btnReveal").addEventListener("click", () => {
+  $("#cardTranslation").classList.toggle("hidden");
+});
+$("#btnSpeakCard").addEventListener("click", async () => {
+  await speakWord(deck[cardI].en);
+});
+
+function hideReveal() { $("#cardTranslation").classList.add("hidden"); }
+
+function renderCards() {
+  const w = deck[cardI];
+  $("#cardWord").textContent = w.en;
+  $("#cardPron").textContent = w.pron ? `Произношение (кириллицей): ${w.pron}` : "";
+  $("#cardTranslation").textContent = w.ru;
+  $("#cardIndex").textContent = `${cardI + 1} / ${deck.length}`;
+}
+
+// ====== 2) MCQ ======
+let mcqI = 0;
+let mcqAnswered = false;
+
+$("#btnSpeakMcq").addEventListener("click", async () => speakWord(deck[mcqI].en));
+$("#btnMcqNext").addEventListener("click", () => {
+  mcqI = (mcqI + 1) % deck.length;
+  mcqAnswered = false;
+  renderMcq();
+});
+
+function resetMcq() { mcqI = 0; mcqAnswered = false; }
+
+function renderMcq() {
+  const w = deck[mcqI];
+  $("#mcqWord").textContent = w.en;
+  $("#mcqPron").textContent = w.pron ? `Произношение: ${w.pron}` : "";
+  $("#mcqIndex").textContent = `${mcqI + 1} / ${deck.length}`;
+  $("#mcqFeedback").textContent = "";
+  $("#mcqFeedback").className = "feedback";
+
+  const wrong = deck.filter(x => x.en !== w.en);
+  const opts = shuffle([w, ...sample(wrong, 3)]).map(x => x.ru);
+
+  $("#mcqOptions").innerHTML = "";
+  opts.forEach(text => {
+    const b = document.createElement("button");
+    b.textContent = text;
+    b.addEventListener("click", () => {
+      if (mcqAnswered) return;
+      mcqAnswered = true;
+
+      if (text === w.ru) {
+        $("#mcqFeedback").textContent = "Верно";
+        $("#mcqFeedback").classList.add("ok");
+      } else {
+        $("#mcqFeedback").textContent = `Неверно. Правильно: ${w.ru}`;
+        $("#mcqFeedback").classList.add("bad");
+      }
     });
-    if (found?.title) { fileTitle = found.title; break; }
-  }
+    $("#mcqOptions").appendChild(b);
+  });
+}
 
-  if (!fileTitle) {
-    const found = items.find((it) => {
-      const t = (it?.title || "").toLowerCase();
-      return t.includes(".ogg") || t.includes(".oga") || t.includes(".wav") || t.includes(".mp3");
-    });
-    if (found?.title) fileTitle = found.title;
-  }
+// ====== 3) TYPING ======
+let typeI = 0;
+$("#btnSpeakType").addEventListener("click", async () => speakWord(deck[typeI].en));
+$("#btnTypeNext").addEventListener("click", () => {
+  typeI = (typeI + 1) % deck.length;
+  $("#typeInput").value = "";
+  $("#typeFeedback").textContent = "";
+  $("#typeFeedback").className = "feedback";
+  renderTyping();
+});
+$("#btnCheckType").addEventListener("click", checkTyping);
+$("#typeInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") checkTyping();
+});
 
-  if (!fileTitle) {
-    state.audioCache.set(key, null);
-    return null;
-  }
+function resetTyping() { typeI = 0; }
 
-  if (!fileTitle.toLowerCase().startsWith("file:")) fileTitle = "File:" + fileTitle;
+function renderTyping() {
+  const w = deck[typeI];
+  $("#typePrompt").textContent = w.ru;
+  $("#typeIndex").textContent = `${typeI + 1} / ${deck.length}`;
+}
 
-  const commons = `https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&prop=imageinfo&iiprop=url&titles=${encodeURIComponent(fileTitle)}`;
+function checkTyping() {
+  const w = deck[typeI];
+  const v = ($("#typeInput").value || "").trim();
 
-  try {
-    const rsp = await fetch(commons, { cache: "no-store" });
-    if (!rsp.ok) throw new Error();
-    const j = await rsp.json();
-    const pages = j?.query?.pages || {};
-    const page = Object.values(pages)[0];
-    const url = page?.imageinfo?.[0]?.url || null;
-    state.audioCache.set(key, url);
-    return url;
-  } catch {
-    state.audioCache.set(key, null);
-    return null;
+  $("#typeFeedback").className = "feedback";
+  if (v.toLowerCase() === w.en.toLowerCase()) {
+    $("#typeFeedback").textContent = "Верно";
+    $("#typeFeedback").classList.add("ok");
+  } else {
+    $("#typeFeedback").textContent = `Неверно. Правильно: ${w.en}`;
+    $("#typeFeedback").classList.add("bad");
   }
 }
 
-async function playAudio(lookup, btn) {
-  const old = btn?.textContent;
-  if (btn) { btn.textContent = "⏳"; btn.disabled = true; }
+// ====== 4) MATCHING ======
+let matchPairs = new Map(); // en -> ru
+let matchLeftSelected = null;
+let matchRightSelected = null;
+let matchLeftOrder = [];
+let matchRightOrder = [];
 
-  const url = await getAudioUrl(lookup);
+$("#btnResetMatch").addEventListener("click", () => {
+  resetMatch();
+  renderMatch();
+});
 
-  if (btn) { btn.textContent = old; btn.disabled = false; }
+function resetMatch() {
+  matchPairs = new Map();
+  matchLeftSelected = null;
+  matchRightSelected = null;
+  matchLeftOrder = shuffle(deck);
+  matchRightOrder = shuffle(deck);
+}
 
-  if (!url) {
-    alert(`Аудио не найдено для: ${lookup}`);
+function renderMatch() {
+  $("#matchFeedback").textContent = "";
+  $("#matchFeedback").className = "feedback";
+
+  const doneCount = matchPairs.size;
+  $("#matchProgress").textContent = `Собрано пар: ${doneCount} / ${deck.length}`;
+
+  $("#matchLeft").innerHTML = "";
+  $("#matchRight").innerHTML = "";
+
+  matchLeftOrder.forEach(w => {
+    const div = document.createElement("div");
+    div.className = "item";
+    div.dataset.en = w.en;
+
+    const already = matchPairs.has(w.en);
+    if (already) div.classList.add("done");
+    if (matchLeftSelected === w.en) div.classList.add("selected");
+
+    div.innerHTML = `<span>${w.en}</span><span class="badge">🔊</span>`;
+    div.addEventListener("click", async () => {
+      if (matchPairs.has(w.en)) return;
+      matchLeftSelected = w.en;
+      matchRightSelected = null;
+      renderMatch();
+      await speakWord(w.en);
+    });
+
+    $("#matchLeft").appendChild(div);
+  });
+
+  matchRightOrder.forEach(w => {
+    const div = document.createElement("div");
+    div.className = "item";
+    div.dataset.ru = w.ru;
+
+    const already = Array.from(matchPairs.values()).includes(w.ru);
+    if (already) div.classList.add("done");
+    if (matchRightSelected === w.ru) div.classList.add("selected");
+
+    div.innerHTML = `<span>${w.ru}</span>`;
+    div.addEventListener("click", () => {
+      if (already) return;
+      matchRightSelected = w.ru;
+      tryPair();
+    });
+
+    $("#matchRight").appendChild(div);
+  });
+}
+
+function tryPair() {
+  if (!matchLeftSelected || !matchRightSelected) {
+    renderMatch();
     return;
   }
 
-  try {
-    const a = new Audio(url);
-    a.play();
-  } catch {
-    window.open(url, "_blank");
+  const correct = deck.find(w => w.en === matchLeftSelected)?.ru === matchRightSelected;
+
+  if (correct) {
+    matchPairs.set(matchLeftSelected, matchRightSelected);
+    $("#matchFeedback").textContent = "Верно";
+    $("#matchFeedback").className = "feedback ok";
+  } else {
+    $("#matchFeedback").textContent = "Неверно";
+    $("#matchFeedback").className = "feedback bad";
   }
+
+  matchLeftSelected = null;
+  matchRightSelected = null;
+
+  if (matchPairs.size === deck.length) {
+    $("#matchFeedback").textContent = "Готово: все пары собраны";
+    $("#matchFeedback").className = "feedback ok";
+  }
+
+  renderMatch();
 }
 
-function bindHotkeys() {
-  document.onkeydown = async (e) => {
-    if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
-
-    if (e.key === "n" || e.key === "N") next();
-
-    if (e.code === "Space") {
-      e.preventDefault();
-      const w = current();
-      if (state.mode === "cards") {
-        state.showAnswer = !state.showAnswer;
-        render();
-      } else if (state.mode === "dict") {
-        await playAudio(w.lookup, null);
-      }
-    }
-  };
+// ====== РЕНДЕР ВСЕГО ======
+function renderAll() {
+  renderCards();
+  renderMcq();
+  renderTyping();
+  renderMatch();
 }
 
-function escapeHtml(s) {
-  return (s ?? "")
-    .toString()
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-$("mode").addEventListener("change", (e) => { state.mode = e.target.value; render(); });
-$("dir").addEventListener("change", (e) => { state.dir = e.target.value; render(); });
-
-loadWords().catch((err) => {
-  $("screen").innerHTML = `<div class="ans">Ошибка загрузки: ${escapeHtml(err.message)}</div>`;
-});
-
+// ====== INIT ======
+resetMatch();
+renderAll();

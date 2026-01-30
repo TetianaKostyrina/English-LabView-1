@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>English Words Trainer</title>
   <style>
-    :root{--bg:#0b0d12;--card:#121625;--muted:#9aa4b2;--text:#e6eaf2;--accent:#5dd6c6;--bad:#ff6b6b;--good:#35d07f}
+    :root{--bg:#0b0d12;--card:#121625;--muted:#9aa4b2;--text:#e6eaf2;--accent:#5dd6c6}
     *{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--text)}
     .wrap{max-width:980px;margin:0 auto;padding:16px}
     h1{font-size:18px;margin:8px 0 12px}
@@ -20,7 +20,6 @@
     button{cursor:pointer;font-weight:700}
     button.primary{background:linear-gradient(135deg,#2ee6c2,#4ea1ff);border:none;color:#061018}
     button.ghost{background:transparent}
-    .pill{display:inline-flex;gap:8px;align-items:center;padding:6px 10px;border-radius:999px;border:1px solid #273055;color:var(--muted);font-size:12px}
     .big{font-size:28px;font-weight:900;margin:10px 0 4px}
     .sub{color:var(--muted);font-size:14px;margin:0}
     .hr{height:1px;background:#1f2742;margin:12px 0}
@@ -34,6 +33,7 @@
     td,th{border-bottom:1px solid #1f2742;padding:8px 6px;text-align:left;font-size:14px}
     th{color:var(--muted);font-weight:700}
     .mono{font-family:ui-monospace,Consolas,monospace}
+    .pill{display:inline-flex;gap:8px;align-items:center;padding:6px 10px;border-radius:999px;border:1px solid #273055;color:var(--muted);font-size:12px}
   </style>
 </head>
 <body>
@@ -44,12 +44,12 @@
       <div class="card grow">
         <div class="grid2">
           <div>
-            <label>Режим (4 части)</label>
+            <label>Режим</label>
             <select id="mode">
               <option value="list">1) Список</option>
               <option value="cards">2) Карточки</option>
               <option value="mcq">3) Тест (выбор)</option>
-              <option value="dict">4) Произношение (аудио → введи слово)</option>
+              <option value="dict">4) Диктант (аудио → введи слово)</option>
             </select>
           </div>
           <div>
@@ -63,24 +63,22 @@
 
         <div class="hr"></div>
         <div class="row">
-          <div class="pill">✅ <span id="ok">0</span></div>
-          <div class="pill">❌ <span id="bad">0</span></div>
-          <div class="pill">🔥 серия: <span id="streak">0</span></div>
           <div class="pill">📦 слов: <span id="count">0</span></div>
+          <div class="pill">🔢 №: <span id="idx">0</span></div>
         </div>
 
         <div class="hr"></div>
-
         <div id="screen"></div>
       </div>
     </div>
 
     <p class="hint">
-      🔊 Аудио берётся с Wiktionary/Commons (если для слова есть запись). Кнопка 🔀 перемешивает порядок слов.
+      🔊 Аудио берётся с Wiktionary/Commons (если для слова есть запись). 🔀 перемешивает порядок.
+      Клавиши: <span class="kbd">Space</span> — показать ответ (в карточках) / повторить аудио (в диктанте), <span class="kbd">N</span> — следующее.
     </p>
   </div>
 
-  <!-- v=3 чтобы обходить кэш -->
-  <script src="app.js?v=3"></script>
+  <!-- v=5 чтобы избежать кэша -->
+  <script src="app.js?v=5"></script>
 </body>
 </html>
